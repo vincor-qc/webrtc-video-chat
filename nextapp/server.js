@@ -5,7 +5,7 @@ const server = require('socket.io')(8080, {
 });
 
 
-const sdpStore = {};
+const idStore = {};
 
 console.log("Server started");
 
@@ -14,7 +14,7 @@ server.on("connection", (socket) => {
 
   // Calls from creation page
   socket.on("validate-room", roomid => {
-    if (sdpStore[roomid]) {
+    if (idStore[roomid]) {
       socket.emit("room-validated", true);
     } else {
       socket.emit("room-validated", false);
@@ -22,7 +22,7 @@ server.on("connection", (socket) => {
   })
 
   socket.on("create-room", () => {
-    sdpStore[id] = {};
+    idStore[id] = [];
     socket.emit("room-created", id);
 
     console.log("Room created with ID: " + id); 
@@ -30,17 +30,34 @@ server.on("connection", (socket) => {
 
 
   // Calls from joined room
-  socket.on("join-room", (roomid, sdp) => {
+  socket.on("join-room", (roomid) => {
 
-    if(!sdpStore[roomid]) return;
+    if(!idStore[roomid]) return;
+    
 
-    socket.to(id).emit("sdp-dump", sdpStore[roomid]);
-    sdpStore[roomid][id] = sdp;
+    server.to(id).emit("id-dump", idStore[roomid]);
+    idStore[roomid].push(socket.id);
 
     socket.join(roomid);
 
-    socket.to(roomid).emit("new-sdp", sdp);
-
     console.log(`Client with ID: ${id} joined room with ID: ${roomid}`);
+  });
+
+  socket.on("offer", (recipient, offer) => {
+    server.to(recipient).emit("offer", id, offer);
+
+    console.log(`Offer sent from client ${id} to recipient ${recipient}`);
+  });
+
+  socket.on("answer", (recipient, answer) => {
+    server.to(recipient).emit("answer", id, answer);
+
+    console.log(`Answer sent from client ${id} to recipient ${recipient}`);
+  });
+
+  socket.on("candidate", (recipient, candidate) => {
+    server.to(recipient).emit("candidate", id, candidate);
+
+    console.log(`Candidate sent from client ${id} to recipient ${recipient}`);
   });
 });
