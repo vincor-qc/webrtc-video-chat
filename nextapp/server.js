@@ -5,59 +5,28 @@ const server = require('socket.io')(8080, {
 });
 
 
-const idStore = {};
+const rooms = {};
 
 console.log("Server started");
 
 server.on("connection", (socket) => {
-  const id = socket.id;
 
-  // Calls from creation page
-  socket.on("validate-room", roomid => {
-    if (idStore[roomid]) {
-      socket.emit("room-validated", true);
-    } else {
-      socket.emit("room-validated", false);
-    }
-  })
-
-  socket.on("create-room", () => {
-    idStore[id] = [];
-    socket.emit("room-created", id);
-
-    console.log("Room created with ID: " + id); 
-  })
+  socket.on("create-room", (id) => {
+    rooms[id] = [];
+    console.log("Room created with ID: " + id);
+  });
 
 
   // Calls from joined room
-  socket.on("join-room", (roomid) => {
-
-    if(!idStore[roomid]) return;
+  socket.on("join-room", (roomID, peerID) => {
+    if(!rooms[roomID]) return;
     
 
-    server.to(id).emit("id-dump", idStore[roomid]);
-    idStore[roomid].push(socket.id);
+    server.to(socket.id).emit("id-dump", rooms[roomID]);
+    rooms[roomID].push([socket.id, peerID]);
 
-    socket.join(roomid);
+    socket.join(roomID);
 
-    console.log(`Client with ID: ${id} joined room with ID: ${roomid}`);
-  });
-
-  socket.on("offer", (recipient, offer) => {
-    server.to(recipient).emit("offer", id, offer);
-
-    console.log(`Offer sent from client ${id} to recipient ${recipient}`);
-  });
-
-  socket.on("answer", (recipient, answer) => {
-    server.to(recipient).emit("answer", id, answer);
-
-    console.log(`Answer sent from client ${id} to recipient ${recipient}`);
-  });
-
-  socket.on("candidate", (recipient, candidate) => {
-    server.to(recipient).emit("candidate", id, candidate);
-
-    console.log(`Candidate sent from client ${id} to recipient ${recipient}`);
+    console.log(`Client with ID ${socket.id} joined room with ID: ${roomID}`);
   });
 });

@@ -1,48 +1,40 @@
-
 import { io } from "socket.io-client";
 import { SetStateAction, useState } from 'react';
 
 const socket = io("ws://localhost:8080");
 
 export default function CallCreator() {
-    const [id, setId] = useState('');
 
-    socket.on("connected", (val) => {
-        console.log("connected")
-        setId(val);
-    })
+    const [createId, setCreateId] = useState('');
+    const [joinId, setJoinId] = useState('');
 
-    const handleChange = (change: { target: { value: SetStateAction<string>; }; }) => {
-        setId(change.target.value)
-    };
+    const createIdChange = (change: { target: { value: SetStateAction<string>; }; }) => {
+        setCreateId(change.target.value);
+    }
+    
+    const joinIdChange = (change: { target: { value: SetStateAction<string>; }; }) => {
+        setJoinId(change.target.value);
+    }
 
     const createRoom = () => {
-        socket.emit("create-room", {sdp: "TEST"});
+        if(createId.length == 0) return alert("Please enter a valid room id");
 
-        socket.once("room-created", (val) => {
-            window.open(`/calls/${val}`, '_self');
-        })
+        socket.emit("create-room", createId);
+        
+        window.open(`/calls/${createId}`, '_self');
     }
 
     const joinRoom = () => {
-        socket.emit("validate-room", id);
-
-        socket.once("room-validated", (val) => {
-            if(val) window.open(`/calls/${id}`, '_self');
-            else console.log("Not a valid room id.");
-        });
+        window.open(`/calls/${joinId}`, '_self')
     }
 
     return (
         <div>
         <main>
-            <h1>
-            Your room id: {}
-            </h1>
-
+            <input value={createId} onChange={createIdChange}></input>
             <button onClick={createRoom}>Create Room</button>
 
-            <input value={id} onChange={handleChange}></input>
+            <input value={joinId} onChange={joinIdChange}></input>
             <button onClick={joinRoom}>Join Room</button>
         </main>
         </div>
