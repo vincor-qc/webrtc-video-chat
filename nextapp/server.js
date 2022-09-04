@@ -11,22 +11,26 @@ console.log("Server started");
 
 server.on("connection", (socket) => {
 
-  socket.on("create-room", (id) => {
-    rooms[id] = [];
-    console.log("Room created with ID: " + id);
+  socket.on("join-room", roomID => {
+    if(!rooms[roomID]) {
+      rooms[roomID] = [];
+      console.log("Room created: " + roomID);
+    }
+
+    if(rooms[roomID].length == 10) return socket.emit("room-full");
+
+    socket.emit("all-users", rooms[roomID]);
+
+    rooms[roomID].push(socket.id);
+
+    console.log("User joined room: " + roomID);
+  })
+
+  socket.on("sending-signal", payload => {
+    server.to(payload.userToSignal).emit('user-joined', { signal: payload.signal, callerID: payload.callerID });
   });
 
-
-  // Calls from joined room
-  socket.on("join-room", (roomID, peerID) => {
-    if(!rooms[roomID]) return;
-    
-
-    server.to(socket.id).emit("id-dump", rooms[roomID]);
-    rooms[roomID].push([socket.id, peerID]);
-
-    socket.join(roomID);
-
-    console.log(`Client with ID ${socket.id} joined room with ID: ${roomID}`);
+  socket.on("returning-signal", payload => {
+    server.to(payload.callerID).emit('receiving-returned-signal', { signal: payload.signal, id: socket.id });
   });
 });

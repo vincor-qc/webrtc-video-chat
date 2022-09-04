@@ -3,94 +3,98 @@ import { useRouter } from 'next/router'
 import { io } from "socket.io-client";
 import { SetStateAction, useEffect, useRef, useState } from 'react';
 
+const Peer = require('simple-peer');
+
 const socket = io("ws://localhost:8080");
 
 export default function Call() {
     const router = useRouter();
     const { roomID } = router.query;
-    
-    const [peer, setPeer] = useState<any>();
-    const localRef = useRef(null);
 
-    const [remoteStreams, setRemoteStreams] = useState([]);
-    const [connectedPeers, setConnectedPeers] = useState([]);
+    const [peers, setPeers] = useState<any>([]);
+    const localRef = useRef(null);
+    const peersRef = useRef<any>([]);
 
     useEffect(() => {
         if(!router.isReady) return;
 
-        let webcam : MediaStream;
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream: any) => {
+            (localRef.current! as HTMLVideoElement).srcObject = stream;
 
-        // Function to get and set the webcam to the local video
-        const initCam = async () => {
-            webcam = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            (localRef.current! as HTMLVideoElement).srcObject = webcam;
-        }
-        initCam();
+            socket.emit("join-room", roomID);
+            socket.on("all-users", users => {
+                console.log("All Users: " + users);
 
-        // Import PeerJS only on client side as it needs access to the window and navigator objects
-        import("peerjs").then(({ default: Peer }) => {
-    
-            // Create a Peer and save it to the state
-            const peer = new Peer();
-            setPeer(peer);
-        
-            // When the peer is ready, try to join the room with the roomID + peerID
-            peer.on('open', (peerID) => {
-                console.log("Peer ID: " + peerID);
-                socket.emit("join-room", roomID, peerID);
-            });
+                const peers: any[] = [];
+                users.forEach((userID: string) => {
+                    const peer = createPeer(userID, socket.id, stream);
 
-            // Triggered whem a new peer joins the room
-            peer.on('call', async (call) => {       
-                console.log("Received Call");
-
-                // Answer the call, providing our mediaStream
-                call.answer(webcam);
-            
-                call.on('stream', (stream) => {
-                    // Ensure this isn't called twice
-                    if(connectedPeers.includes(call.peer)) return;
-                    setConnectedPeers([]);
-
-                    console.log(connectedPeers)
-
-                    console.log("Received stream from: " + call.peer);
-                    
-                    setRemoteStreams([...remoteStreams, stream])
-
-                    console.log(remoteStreams.length);
-
-                });
-            });
-
-            // On join, create a call to every other peer in the room
-            socket.on("id-dump", (ids) => {
-                console.log("Received ID Dump");
-                console.log(ids);
-    
-                ids.forEach(async ([userID, peerID] : [string, string]) => {
-    
-                    console.log("Sent offer to: " + peerID);
-                    
-                    // Create a call to the peerID
-                    const call = peer.call(peerID, webcam);
-    
-                    call.on('stream', (stream: MediaProvider) => {
-
-                        // Ensure this isn't called twice
-                        if(connectedPeers.includes(peerID)) return;
-                        setConnectedPeers([...connectedPeers, peerID]);
-
-                        console.log("Received stream from: " + peerID);
-                        
-                        setRemoteStreams([...remoteStreams, stream])
-
-                        console.log(remoteStreams.length);
+                    peersRef.current.push({
+                        peerID: userID,
+                        peer,
                     });
+                    
+                    peers.push(peer);
                 });
+
+                setPeers(peers);
+
+                console.log(peers);
+            })
+
+            socket.on("user-joined", payload => {
+                const peer = addPeer(payload.signal, payload.callerID, stream);
+                peersRef.current.push({
+                    peerID: payload.callerID,
+                    peer,
+                });
+
+                setPeers((users: any) => [...users, peer]);
+
+                console.log("User Joined: " + payload.callerID);
+                console.log(peers);
             });
+
+            socket.on("receiving-returning-signal", payload => {
+                const item = peersRef.current.find((p: any) => p.peerID === payload.id);
+                item.peer.signal(payload.signal);
+            });
+
         });
+
     }, [router.isReady]);
+
+    const createPeer = (userToSignal: string, callerID: string, stream: any) => {
+        const peer = new Peer({
+            initiator: true,
+            trickle: false,
+            stream,
+        });
+
+        peer.on("signal", (signal: any) => {
+            socket.emit("sending-signal", { userToSignal, callerID, signal });
+            console.log("Sent Signal to: " + userToSignal);
+        });
+
+        return peer;
+    };
+
+    const addPeer = (incomingSignal: any, callerID: string, stream: any) => {
+        const peer = new Peer({
+            initiator: false,
+            trickle: false,
+            stream,
+        });
+
+        peer.on("signal", (signal: any) => {
+            socket.emit("returning-signal", { signal, callerID });
+            console.log("Returning Signal to: " + callerID);
+        });
+
+        peer.signal(incomingSignal);
+
+        return peer;
+    };
 
     return (
         <div>
@@ -102,16 +106,30 @@ export default function Call() {
                 </div>
 
                 {
-                    remoteStreams.map((stream, index) => {
+                    peers.map((peer: any, index: number) => {
+                        console.log(index)
                         return (
-                            <video autoPlay key={stream.id} ref={(video) => {
-                                console.log(remoteStreams);
-                                video!.srcObject = stream;
-                            }}></video>
-                        )
+                            <Video key={index} peer={peer} />
+                        );
                     })
                 }
             </main>
         </div>
     );
 }
+
+const Video = (props: any) => {
+    const ref = useRef(null);
+
+    useEffect(() => {
+        props.peer.on("stream", (stream: any) => {
+            console.log("Stream: " + stream);
+
+            (ref.current! as HTMLVideoElement).srcObject = stream;
+        });
+    }, []);
+
+    return (
+        <video autoPlay ref={ref}></video>
+    );
+};
